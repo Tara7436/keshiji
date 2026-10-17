@@ -1,13 +1,22 @@
 (function(){
   'use strict';
-  var STORE_KEY = 'lesson_demo_v1';
-  var state = { loggedIn:false, students:[] };
+
+  var SUPABASE_URL = 'https://xfopgujreivzolnzrbxf.supabase.co';
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhmb3BndWpyZWl2em9sbnpyYnhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyMzI3NzAsImV4cCI6MjEwNzgwODc3MH0.hExSjr9Tkwl9oOdOTVt5_VLLex9gj4E4hKu5V6bBgZ4';
+  var CODE_KEY = 'keshiji_sync_code';
+  var CACHE_KEY = 'keshiji_local_cache';
+  var SYNC_TEXT = {ok:'已同步', syncing:'同步中…', loading:'连接中…', error:'同步失败'};
+
+  var state = { students: [] };
+  var syncCode = null;
+  try{ syncCode = localStorage.getItem(CODE_KEY); }catch(e){}
   var lastRecord = null;
   var opState = { id:null, type:null, qty:1 };
   var opMode = 'op';       // 'op' | 'form'
   var editingId = null;
   var currentStudentId = null;
   var toastTimer = null;
+  var saveTimer = null;
 
   function el(id){ return document.getElementById(id); }
   function val(id){ var n=el(id); return n? n.value : ''; }
@@ -17,40 +26,45 @@
   function friendly(date){ var p=date.split('-'); return parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'; }
   function fmtMonth(m){ var p=m.split('-'); return p[0]+'年'+parseInt(p[1],10)+'月'; }
 
-  /* ---------- 数据 ---------- */
-  function st(id,name,price,purchases,lessons,leaves){
-    var records=[];
-    purchases.forEach(function(p){ records.push({id:uid(),date:p[0],type:'purchase',qty:p[1]}); });
-    lessons.forEach(function(d){ records.push({id:uid(),date:d,type:'lesson',qty:1}); });
-    (leaves||[]).forEach(function(d){ records.push({id:uid(),date:d,type:'leave',qty:1}); });
-    return { id:id, name:name, price:price, note:'', records:records };
+  /* ---------- 云端同步 ---------- */
+  function supabaseRpc(fn, params){
+    return fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+SUPABASE_ANON_KEY},
+      body: JSON.stringify(params || {})
+    }).then(function(res){
+      if(!res.ok) throw new Error('RPC '+res.status);
+      return res.text();
+    }).then(function(t){ return t ? JSON.parse(t) : null; });
   }
-  function seedStudents(){
-    return [
-      st('s1','王小明',120,[['2026-08-12',10]],['2026-09-10','2026-10-07'],['2026-09-25']),
-      st('s2','李思思',150,[['2026-08-01',10]],['2026-08-15','2026-08-29','2026-09-05','2026-09-19','2026-09-26','2026-10-03','2026-10-10','2026-10-14'],['2026-09-30']),
-      st('s3','张子涵',100,[['2026-07-20',10]],['2026-08-02','2026-08-16','2026-08-30','2026-09-13','2026-09-27','2026-10-04','2026-10-11','2026-10-13','2026-10-14']),
-      st('s4','陈浩然',120,[['2026-07-05',10]],['2026-07-19','2026-08-02','2026-08-16','2026-08-30','2026-09-13','2026-09-27','2026-10-04','2026-10-11','2026-10-14','2026-10-16']),
-      st('s5','刘雨桐',130,[['2026-09-01',20]],['2026-09-06','2026-09-20','2026-10-04','2026-10-11','2026-10-14']),
-      st('s6','赵一诺',110,[['2026-09-10',10]],['2026-09-15','2026-09-29','2026-10-06','2026-10-13','2026-10-14']),
-      st('s7','周子墨',140,[['2026-08-25',10]],['2026-09-01','2026-09-15','2026-09-29','2026-10-06','2026-10-13','2026-10-14','2026-10-15','2026-10-16']),
-      st('s8','吴梓萱',120,[['2026-09-15',10]],['2026-09-22','2026-09-29','2026-10-06','2026-10-13','2026-10-14','2026-10-15','2026-10-16'])
-    ];
-  }
-  function load(){
-    try{
-      var raw = localStorage.getItem(STORE_KEY);
-      if(raw){
-        var p = JSON.parse(raw);
-        state = { loggedIn:!!p.loggedIn, students:(p.students && p.students.length)?p.students:seedStudents() };
-        return;
-      }
-    }catch(e){}
-    state = { loggedIn:false, students:seedStudents() };
-  }
+  function loadLocalCache(){ try{ return JSON.parse(localStorage.getItem(CACHE_KEY)); }catch(e){ return null; } }
+  function saveLocalCache(){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify({students:state.students})); }catch(e){} }
+  function setSync(s){ var n=el('syncIndicator'); if(n){ n.setAttribute('data-s', s); n.textContent = SYNC_TEXT[s] || s; } }
+
   function save(){
-    try{ localStorage.setItem(STORE_KEY, JSON.stringify({loggedIn:state.loggedIn, students:state.students})); }catch(e){}
+    saveLocalCache();
+    clearTimeout(saveTimer);
+    setSync('syncing');
+    saveTimer = setTimeout(function(){
+      supabaseRpc('save_doc', {p_code: syncCode, p_data:{students:state.students}})
+        .then(function(){ setSync('ok'); })
+        .catch(function(){ setSync('error'); });
+    }, 600);
   }
+  function loadFromCloud(){
+    return supabaseRpc('get_doc', {p_code: syncCode}).then(function(doc){
+      if(doc && doc.students && doc.students.length) state = {students: doc.students};
+      else state = {students: []};
+      saveLocalCache();
+      return true;
+    }).catch(function(){
+      var c = loadLocalCache();
+      if(c && c.students) state = {students: c.students};
+      return false;
+    });
+  }
+
+  /* ---------- 学生数据 ---------- */
   function student(id){ for(var i=0;i<state.students.length;i++) if(state.students[i].id===id) return state.students[i]; return null; }
   function remaining(s){
     return s.records.reduce(function(acc,r){
@@ -65,11 +79,7 @@
     if(rem===2) return {label:'该续费', cls:'st-warn'};
     return {label:'正常', cls:'st-ok'};
   }
-  function lastRecordOf(s){
-    var last=null;
-    s.records.forEach(function(r){ if(!last || r.date>last.date) last=r; });
-    return last;
-  }
+  function lastRecordOf(s){ var last=null; s.records.forEach(function(r){ if(!last || r.date>last.date) last=r; }); return last; }
   function lastDate(s){ var l=lastRecordOf(s); return l? l.date : ''; }
 
   /* ---------- 渲染 ---------- */
@@ -79,7 +89,6 @@
     var d = computeMonth(today().slice(0,7));
     el('headerIncome').innerHTML = '本月课消 <b>'+fmt(d.income)+'</b>';
   }
-
   function renderAlerts(){
     var empty=[],crit=[],warn=[];
     state.students.forEach(function(s){
@@ -100,7 +109,6 @@
   function alertSeg(label,names,cls){
     return '<span class="alert-group"><span class="alert-label '+cls+'">'+label+'</span><span class="alert-names">'+names.join('、')+'</span></span>';
   }
-
   function renderList(){
     var list=el('studentList');
     var q=val('searchInput').trim();
@@ -130,7 +138,6 @@
       '</span>'+
     '</li>';
   }
-
   function renderIncome(){
     var mk = el('monthSelect').value;
     var d = computeMonth(mk);
@@ -294,10 +301,8 @@
     toast(editingId?'已保存':'已添加学生 '+name, false);
   }
 
-  /* ---------- 弹窗 / 抽屉开关 ---------- */
+  /* ---------- 弹窗 / Toast ---------- */
   function closeModal(){ el('modal').classList.add('hidden'); }
-
-  /* ---------- Toast ---------- */
   function toast(msg,withUndo){
     var t=el('toast');
     t.innerHTML='<span>'+msg+'</span>'+(withUndo?'<button class="undo" id="undoBtn">撤销</button>':'');
@@ -307,17 +312,57 @@
     if(withUndo) el('undoBtn').addEventListener('click', function(){ undoLast(); t.classList.add('hidden'); });
   }
 
-  /* ---------- 登录 ---------- */
+  /* ---------- 登录 / 同步码 ---------- */
   function showLogin(){ el('login').classList.remove('hidden'); el('app').classList.add('hidden'); }
   function showApp(){
     el('login').classList.add('hidden'); el('app').classList.remove('hidden');
     populateMonths(); renderAll();
   }
+  function genCode(){
+    var A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    function g(n){ var s=''; for(var i=0;i<n;i++) s+=A.charAt(Math.floor(Math.random()*A.length)); return s; }
+    return 'KSHJ-'+g(4)+'-'+g(4)+'-'+g(4);
+  }
+  function enterCode(){
+    var code = val('codeInput').trim();
+    if(!code){ alert('请输入或生成一个同步码'); return; }
+    var btn = el('codeBtn');
+    btn.disabled = true; btn.textContent = '连接中…';
+    supabaseRpc('get_doc', {p_code: code}).then(function(doc){
+      var hasData = doc && doc.students && doc.students.length;
+      if(!hasData && !confirm('没有找到这个同步码的数据。\n\n确定用这个码创建新的（空）数据吗？\n如果另一台设备已经用过别的码，请先核对再进入。')){
+        btn.disabled=false; btn.textContent='进入'; return;
+      }
+      syncCode = code;
+      try{ localStorage.setItem(CODE_KEY, code); }catch(e){}
+      state = {students: hasData? doc.students : []};
+      saveLocalCache();
+      setSync('ok');
+      showApp();
+      if(!hasData) save();
+    }).catch(function(){
+      btn.disabled=false; btn.textContent='进入';
+      alert('无法连接服务器，请检查网络后重试。');
+    });
+  }
+  function logout(){
+    if(!confirm('退出后本机将清除同步码，需要重新输入才能进入。确定退出？')) return;
+    try{ localStorage.removeItem(CODE_KEY); }catch(e){}
+    location.reload();
+  }
+  function copyCode(){
+    if(!syncCode) return;
+    var ta = document.createElement('textarea');
+    ta.value = syncCode; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+    toast('同步码已复制', false);
+  }
 
   /* ---------- 事件绑定 ---------- */
-  el('loginBtn').addEventListener('click', function(){ state.loggedIn=true; save(); showApp(); });
-  el('skipLogin').addEventListener('click', function(){ state.loggedIn=true; save(); showApp(); });
-  el('phoneInput').addEventListener('keydown', function(e){ if(e.key==='Enter'){ state.loggedIn=true; save(); showApp(); } });
+  el('codeBtn').addEventListener('click', enterCode);
+  el('genCodeBtn').addEventListener('click', function(){ el('codeInput').value = genCode(); });
+  el('codeInput').addEventListener('keydown', function(e){ if(e.key==='Enter') enterCode(); });
 
   document.querySelectorAll('.tab').forEach(function(t){
     t.addEventListener('click', function(){
@@ -396,16 +441,14 @@
   document.addEventListener('click', function(e){
     if(!e.target.closest('#userDropdown') && e.target!==el('userMenu')) el('userDropdown').classList.add('hidden');
   });
-  el('resetData').addEventListener('click', function(){
-    if(!confirm('确定重置为演示数据？你本机的修改会被覆盖。')) return;
-    state.students=seedStudents(); save(); populateMonths(); renderAll();
-    el('userDropdown').classList.add('hidden'); toast('已重置为演示数据', false);
-  });
-  el('logoutBtn').addEventListener('click', function(){
-    state.loggedIn=false; save(); el('userDropdown').classList.add('hidden'); showLogin();
-  });
+  el('showCodeBtn').addEventListener('click', function(){ el('userDropdown').classList.add('hidden'); copyCode(); });
+  el('logoutBtn').addEventListener('click', logout);
 
   /* ---------- 启动 ---------- */
-  load();
-  if(state.loggedIn) showApp(); else showLogin();
+  if(syncCode){
+    setSync('loading');
+    loadFromCloud().then(function(ok){ setSync(ok?'ok':'error'); showApp(); });
+  } else {
+    showLogin();
+  }
 })();

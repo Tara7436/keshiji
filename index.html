@@ -15,13 +15,14 @@
         <span class="seal">记</span>
         <span class="brand-name">课时记</span>
       </div>
-      <p class="login-sub">登录后，课时数据在多台设备间同步。</p>
+      <p class="login-sub">输入同步码，多设备自动同步。</p>
       <div class="field">
-        <label>手机号</label>
-        <input id="phoneInput" type="tel" inputmode="numeric" placeholder="输入手机号" value="138 0000 0000">
+        <label>同步码</label>
+        <input id="codeInput" autocomplete="off" spellcheck="false" placeholder="如 KSHJ-XXXX-XXXX-XXXX">
       </div>
-      <button class="btn btn-primary" id="loginBtn">登录</button>
-      <button class="btn btn-link" id="skipLogin">先进入演示，暂不登录</button>
+      <button class="btn btn-primary" id="codeBtn">进入</button>
+      <button class="btn btn-link" id="genCodeBtn">生成一个同步码</button>
+      <p class="login-hint">同步码就是你的钥匙：在另一台设备输入同一个码，即可看到并同步同一份数据。请务必妥善保存。</p>
     </div>
   </div>
 
@@ -40,12 +41,9 @@
         <button class="tab" data-view="income">收入统计</button>
       </nav>
       <div class="top-right">
+        <span class="sync" id="syncIndicator" data-s="ok">已同步</span>
         <div class="month-pill" id="headerIncome"></div>
-        <div class="user">
-          <span class="avatar">李</span>
-          <span class="user-name">李老师</span>
-          <button class="icon-btn" id="userMenu" aria-label="菜单">⋯</button>
-        </div>
+        <button class="icon-btn" id="userMenu" aria-label="菜单">⋯</button>
       </div>
     </header>
 
@@ -140,7 +138,7 @@
 
   <!-- 用户菜单 -->
   <div id="userDropdown" class="dropdown hidden">
-    <button id="resetData">重置演示数据</button>
+    <button id="showCodeBtn">复制我的同步码</button>
     <button id="logoutBtn">退出登录</button>
   </div>
 

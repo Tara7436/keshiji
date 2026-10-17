@@ -51,6 +51,7 @@ input,select{font-family:inherit}
 }
 .brand-name{font-family:var(--serif);font-size:22px;font-weight:700;letter-spacing:.02em}
 .login-sub{margin:22px 0 4px;color:var(--ink-2)}
+.login-hint{margin-top:18px;font-size:12px;color:var(--ink-3);line-height:1.6}
 .field{margin-top:16px}
 .field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:7px}
 .field input{
@@ -95,6 +96,12 @@ input,select{font-family:inherit}
   border-radius:999px;padding:7px 13px;white-space:nowrap;
 }
 .month-pill b{font-family:var(--serif);font-size:14px;margin-left:2px}
+.sync{font-size:12px;color:var(--ink-3);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.sync::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.sync[data-s="ok"]::before{background:var(--ok)}
+.sync[data-s="syncing"]::before{background:var(--warn)}
+.sync[data-s="loading"]::before{background:var(--warn)}
+.sync[data-s="error"]::before{background:var(--crit)}
 .user{display:flex;align-items:center;gap:8px}
 .avatar{
   width:30px;height:30px;border-radius:50%;background:var(--jade);color:#fff;
